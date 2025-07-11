@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Dialog,
   DialogContent,
@@ -100,14 +101,19 @@ export default function MembersPage() {
                     <Users className="h-5 w-5" />
                     {member.name}
                   </CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDeleteMember(member.id)}
-                    className="text-red-600 hover:text-red-700"
+                  <ConfirmDialog
+                    title="确认删除成员"
+                    description={`确定要删除成员"${member.name}"吗？此操作无法撤销。`}
+                    onConfirm={() => handleDeleteMember(member.id)}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </ConfirmDialog>
                 </div>
                 <CardDescription>
                   添加时间：{new Date(member.createdAt).toLocaleDateString("zh-CN")}

@@ -2,30 +2,50 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { storage } from "@/lib/storage"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { storage, type Category } from "@/lib/storage"
 import { Package, ArrowLeft } from "lucide-react"
 
 export default function AddProductPage() {
   const router = useRouter()
+  const [categories, setCategories] = useState<Category[]>([])
   const [product, setProduct] = useState({
     name: "",
     stock: 0,
     threshold: 0,
+    categoryId: "",
   })
+
+  useEffect(() => {
+    // 初始化默认分组
+    storage.initializeDefaultCategory()
+    loadCategories()
+  }, [])
+
+  const loadCategories = () => {
+    const loadedCategories = storage.getCategories()
+    setCategories(loadedCategories)
+    
+    // 如果有分组且产品分组还未设置，设置为第一个分组
+    if (loadedCategories.length > 0 && !product.categoryId) {
+      setProduct(prev => ({ ...prev, categoryId: loadedCategories[0].id }))
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (product.name && product.stock >= 0 && product.threshold >= 0) {
+    if (product.name && product.stock >= 0 && product.threshold >= 0 && product.categoryId) {
       storage.addProduct({
         name: product.name,
         stock: product.stock,
         threshold: product.threshold,
+        categoryId: product.categoryId,
       })
       router.push("/inventory")
     }
@@ -60,6 +80,24 @@ export default function AddProductPage() {
                 placeholder="请输入商品名称"
                 required
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="category">商品分组</Label>
+              <Select 
+                value={product.categoryId} 
+                onValueChange={(value) => setProduct({ ...product, categoryId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择商品分组" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="stock">库存数量</Label>

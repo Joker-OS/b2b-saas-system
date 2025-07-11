@@ -13,6 +13,13 @@ export interface Product {
   name: string
   stock: number
   threshold: number
+  categoryId: string
+  createdAt: string
+}
+
+export interface Category {
+  id: string
+  name: string
   createdAt: string
 }
 
@@ -104,6 +111,54 @@ class StorageManager {
     this.saveProducts(products)
   }
 
+  // 分组管理
+  getCategories(): Category[] {
+    return this.getItem<Category>("categories")
+  }
+
+  saveCategories(categories: Category[]): void {
+    this.setItem("categories", categories)
+  }
+
+  addCategory(category: Omit<Category, "id" | "createdAt">): Category {
+    const categories = this.getCategories()
+    const newCategory: Category = {
+      ...category,
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString(),
+    }
+    categories.push(newCategory)
+    this.saveCategories(categories)
+    return newCategory
+  }
+
+  updateCategory(id: string, updates: Partial<Category>): void {
+    const categories = this.getCategories()
+    const index = categories.findIndex((category) => category.id === id)
+    if (index !== -1) {
+      categories[index] = { ...categories[index], ...updates }
+      this.saveCategories(categories)
+    }
+  }
+
+  deleteCategory(id: string): void {
+    // 删除分组时，将该分组下的产品移动到默认分组
+    const categories = this.getCategories()
+    const defaultCategory = categories.find(c => c.name === "默认分组")
+    
+    if (defaultCategory) {
+      const products = this.getProducts()
+      const updatedProducts = products.map(product => 
+        product.categoryId === id ? { ...product, categoryId: defaultCategory.id } : product
+      )
+      this.saveProducts(updatedProducts)
+    }
+
+    // 删除分组
+    const updatedCategories = categories.filter((category) => category.id !== id)
+    this.saveCategories(updatedCategories)
+  }
+
   // 成员管理
   getMembers(): Member[] {
     return this.getItem<Member>("members")
@@ -128,6 +183,14 @@ class StorageManager {
   deleteMember(id: string): void {
     const members = this.getMembers().filter((member) => member.id !== id)
     this.saveMembers(members)
+  }
+
+  // 初始化默认分组
+  initializeDefaultCategory(): void {
+    const categories = this.getCategories()
+    if (categories.length === 0) {
+      this.addCategory({ name: "默认分组" })
+    }
   }
 }
 

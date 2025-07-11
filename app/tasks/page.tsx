@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { storage, type Task, type Member } from "@/lib/storage"
-import { Plus, Calendar, User, CheckCircle, Clock, AlertTriangle } from "lucide-react"
+import { Plus, Calendar, User, CheckCircle, Clock, AlertTriangle, Trash2 } from "lucide-react"
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -67,6 +68,11 @@ export default function TasksPage() {
 
   const handleCompleteTask = (taskId: string) => {
     storage.updateTask(taskId, { status: "completed" })
+    loadData()
+  }
+
+  const handleDeleteTask = (taskId: string) => {
+    storage.deleteTask(taskId)
     loadData()
   }
 
@@ -171,8 +177,23 @@ export default function TasksPage() {
             <Card key={task.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{task.title}</CardTitle>
-                  {getStatusBadge(task.status)}
+                  <div className="flex items-center gap-4">
+                    <CardTitle className="text-lg">{task.title}</CardTitle>
+                    {getStatusBadge(task.status)}
+                  </div>
+                  <ConfirmDialog
+                    title="确认删除任务"
+                    description={`确定要删除任务"${task.title}"吗？此操作无法撤销。`}
+                    onConfirm={() => handleDeleteTask(task.id)}
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </ConfirmDialog>
                 </div>
                 <CardDescription className="flex items-center gap-4">
                   <span className="flex items-center gap-1">

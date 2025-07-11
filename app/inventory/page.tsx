@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Dialog,
   DialogContent,
@@ -13,25 +15,39 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
-import { storage, type Product } from "@/lib/storage"
-import { Package, AlertTriangle, Edit, Trash2, ArrowDown } from "lucide-react"
+import { storage, type Product, type Category } from "@/lib/storage"
+import { Package, AlertTriangle, Edit, Trash2, ArrowDown, ArrowUp, Plus, FolderPlus, Move } from "lucide-react"
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [outboundProduct, setOutboundProduct] = useState<Product | null>(null)
+  const [inboundProduct, setInboundProduct] = useState<Product | null>(null)
+  const [moveProduct, setMoveProduct] = useState<Product | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isOutboundDialogOpen, setIsOutboundDialogOpen] = useState(false)
+  const [isInboundDialogOpen, setIsInboundDialogOpen] = useState(false)
+  const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false)
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
   const [outboundQuantity, setOutboundQuantity] = useState(0)
+  const [inboundQuantity, setInboundQuantity] = useState(0)
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [targetCategoryId, setTargetCategoryId] = useState("")
 
   useEffect(() => {
-    loadProducts()
+    // 初始化默认分组
+    storage.initializeDefaultCategory()
+    loadData()
   }, [])
 
-  const loadProducts = () => {
+  const loadData = () => {
     const loadedProducts = storage.getProducts()
+    const loadedCategories = storage.getCategories()
     setProducts(loadedProducts)
+    setCategories(loadedCategories)
   }
 
   const handleEditProduct = (product: Product) => {
@@ -48,19 +64,31 @@ export default function InventoryPage() {
       })
       setEditingProduct(null)
       setIsEditDialogOpen(false)
-      loadProducts()
+      loadData()
     }
   }
 
   const handleDeleteProduct = (productId: string) => {
     storage.deleteProduct(productId)
-    loadProducts()
+    loadData()
   }
 
   const handleOutboundProduct = (product: Product) => {
     setOutboundProduct(product)
     setOutboundQuantity(0)
     setIsOutboundDialogOpen(true)
+  }
+
+  const handleInboundProduct = (product: Product) => {
+    setInboundProduct(product)
+    setInboundQuantity(0)
+    setIsInboundDialogOpen(true)
+  }
+
+  const handleMoveProduct = (product: Product) => {
+    setMoveProduct(product)
+    setTargetCategoryId("")
+    setIsMoveDialogOpen(true)
   }
 
   const handleOutboundSubmit = () => {
@@ -73,88 +101,278 @@ export default function InventoryPage() {
         setOutboundProduct(null)
         setOutboundQuantity(0)
         setIsOutboundDialogOpen(false)
-        loadProducts()
+        loadData()
       }
     }
+  }
+
+  const handleInboundSubmit = () => {
+    if (inboundProduct && inboundQuantity > 0) {
+      const newStock = inboundProduct.stock + inboundQuantity
+      storage.updateProduct(inboundProduct.id, {
+        stock: newStock,
+      })
+      setInboundProduct(null)
+      setInboundQuantity(0)
+      setIsInboundDialogOpen(false)
+      loadData()
+    }
+  }
+
+  const handleMoveSubmit = () => {
+    if (moveProduct && targetCategoryId) {
+      storage.updateProduct(moveProduct.id, {
+        categoryId: targetCategoryId,
+      })
+      setMoveProduct(null)
+      setTargetCategoryId("")
+      setIsMoveDialogOpen(false)
+      loadData()
+    }
+  }
+
+  const handleAddCategory = () => {
+    if (newCategoryName.trim()) {
+      storage.addCategory({ name: newCategoryName.trim() })
+      setNewCategoryName("")
+      setIsCategoryDialogOpen(false)
+      loadData()
+    }
+  }
+
+  const handleDeleteCategory = (categoryId: string) => {
+    storage.deleteCategory(categoryId)
+    loadData()
   }
 
   const isLowStock = (product: Product) => {
     return product.stock < product.threshold
   }
 
+  const getProductsByCategory = (categoryId: string) => {
+    return products.filter(product => product.categoryId === categoryId)
+  }
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find(c => c.id === categoryId)?.name || "未知分组"
+  }
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">库存管理</h2>
+        <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              添加分组
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>添加商品分组</DialogTitle>
+              <DialogDescription>创建新的商品分组来组织您的产品。</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="category-name">分组名称</Label>
+                <Input
+                  id="category-name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="请输入分组名称"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleAddCategory} disabled={!newCategoryName.trim()}>
+                创建分组
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <div className="grid gap-4">
-        {products.length === 0 ? (
+      <div className="space-y-6">
+        {categories.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
               <Package className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">暂无商品，前往"添加商品"页面添加第一个商品</p>
+              <p className="text-muted-foreground">正在初始化分组...</p>
             </CardContent>
           </Card>
         ) : (
-          products.map((product) => (
-            <Card key={product.id} className={isLowStock(product) ? "border-red-200 bg-red-50" : ""}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
-                    {product.name}
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    {isLowStock(product) && (
-                      <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                        库存过低
-                      </Badge>
+          categories.map((category) => {
+            const categoryProducts = getProductsByCategory(category.id)
+            return (
+              <Card key={category.id} className="w-full">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <Package className="h-5 w-5" />
+                      {category.name}
+                      <Badge variant="outline">{categoryProducts.length} 个商品</Badge>
+                    </CardTitle>
+                    {category.name !== "默认分组" && (
+                      <ConfirmDialog
+                        title="确认删除分组"
+                        description={`确定要删除分组"${category.name}"吗？该分组下的所有商品将移动到默认分组。此操作无法撤销。`}
+                        onConfirm={() => handleDeleteCategory(category.id)}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </ConfirmDialog>
                     )}
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => handleOutboundProduct(product)}
-                      disabled={product.stock === 0}
-                    >
-                      <ArrowDown className="h-4 w-4 mr-1" />
-                      出库
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleEditProduct(product)}>
-                      <Edit className="h-4 w-4 mr-1" />
-                      编辑
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteProduct(product.id)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      删除
-                    </Button>
                   </div>
-                </div>
-                <CardDescription>
-                  <div className="grid grid-cols-2 gap-4 mt-2">
-                    <div>
-                      <span className="text-sm text-muted-foreground">当前库存：</span>
-                      <span className={`font-semibold ${isLowStock(product) ? "text-red-600" : "text-green-600"}`}>
-                        {product.stock}
-                      </span>
+                </CardHeader>
+                <CardContent>
+                  {categoryProducts.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-4">该分组暂无商品</p>
+                  ) : (
+                    <div className="grid gap-4">
+                      {categoryProducts.map((product) => (
+                        <Card key={product.id} className={isLowStock(product) ? "border-red-200 bg-red-50" : ""}>
+                          <CardHeader>
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="flex items-center gap-2">
+                                <Package className="h-4 w-4" />
+                                {product.name}
+                              </CardTitle>
+                              <div className="flex items-center gap-2">
+                                {isLowStock(product) && (
+                                  <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                                    <AlertTriangle className="w-3 h-3 mr-1" />
+                                    库存过低
+                                  </Badge>
+                                )}
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => handleInboundProduct(product)}
+                                >
+                                  <ArrowUp className="h-4 w-4 mr-1" />
+                                  入库
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => handleOutboundProduct(product)}
+                                  disabled={product.stock === 0}
+                                >
+                                  <ArrowDown className="h-4 w-4 mr-1" />
+                                  出库
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => handleMoveProduct(product)}
+                                >
+                                  <Move className="h-4 w-4 mr-1" />
+                                  移动
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => handleEditProduct(product)}>
+                                  <Edit className="h-4 w-4 mr-1" />
+                                  编辑
+                                </Button>
+                                <ConfirmDialog
+                                  title="确认删除商品"
+                                  description={`确定要删除商品"${product.name}"吗？此操作无法撤销。`}
+                                  onConfirm={() => handleDeleteProduct(product.id)}
+                                >
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-1" />
+                                    删除
+                                  </Button>
+                                </ConfirmDialog>
+                              </div>
+                            </div>
+                            <CardDescription>
+                              <div className="grid grid-cols-2 gap-4 mt-2">
+                                <div>
+                                  <span className="text-sm text-muted-foreground">当前库存：</span>
+                                  <span className={`font-semibold ${isLowStock(product) ? "text-red-600" : "text-green-600"}`}>
+                                    {product.stock}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-sm text-muted-foreground">库存阈值：</span>
+                                  <span className="font-semibold">{product.threshold}</span>
+                                </div>
+                              </div>
+                            </CardDescription>
+                          </CardHeader>
+                        </Card>
+                      ))}
                     </div>
-                    <div>
-                      <span className="text-sm text-muted-foreground">库存阈值：</span>
-                      <span className="font-semibold">{product.threshold}</span>
-                    </div>
-                  </div>
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          ))
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })
         )}
       </div>
+
+      {/* 入库对话框 */}
+      <Dialog open={isInboundDialogOpen} onOpenChange={setIsInboundDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>商品入库</DialogTitle>
+            <DialogDescription>
+              {inboundProduct && `向 "${inboundProduct.name}" 的库存中添加指定数量`}
+            </DialogDescription>
+          </DialogHeader>
+          {inboundProduct && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="current-stock-inbound">当前库存</Label>
+                <Input
+                  id="current-stock-inbound"
+                  value={inboundProduct.stock}
+                  disabled
+                  className="bg-gray-50"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="inbound-quantity">入库数量</Label>
+                <Input
+                  id="inbound-quantity"
+                  type="number"
+                  min="1"
+                  value={inboundQuantity}
+                  onChange={(e) => setInboundQuantity(Number.parseInt(e.target.value) || 0)}
+                  placeholder="请输入入库数量"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="total-stock">入库后总库存</Label>
+                <Input
+                  id="total-stock"
+                  value={inboundProduct.stock + inboundQuantity}
+                  disabled
+                  className="bg-gray-50 text-green-600 font-semibold"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button 
+              onClick={handleInboundSubmit}
+              disabled={!inboundQuantity || inboundQuantity <= 0}
+            >
+              确认入库
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 出库对话框 */}
       <Dialog open={isOutboundDialogOpen} onOpenChange={setIsOutboundDialogOpen}>
@@ -168,9 +386,9 @@ export default function InventoryPage() {
           {outboundProduct && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="current-stock">当前库存</Label>
+                <Label htmlFor="current-stock-outbound">当前库存</Label>
                 <Input
-                  id="current-stock"
+                  id="current-stock-outbound"
                   value={outboundProduct.stock}
                   disabled
                   className="bg-gray-50"
@@ -215,6 +433,54 @@ export default function InventoryPage() {
               disabled={!outboundQuantity || outboundQuantity <= 0 || (outboundProduct ? outboundQuantity > outboundProduct.stock : true)}
             >
               确认出库
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 移动产品对话框 */}
+      <Dialog open={isMoveDialogOpen} onOpenChange={setIsMoveDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>移动商品</DialogTitle>
+            <DialogDescription>
+              {moveProduct && `将 "${moveProduct.name}" 移动到其他分组`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="current-category">当前分组</Label>
+              <Input
+                id="current-category"
+                value={moveProduct ? getCategoryName(moveProduct.categoryId) : ""}
+                disabled
+                className="bg-gray-50"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="target-category">目标分组</Label>
+              <Select value={targetCategoryId} onValueChange={setTargetCategoryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择目标分组" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories
+                    .filter(category => category.id !== moveProduct?.categoryId)
+                    .map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              onClick={handleMoveSubmit}
+              disabled={!targetCategoryId}
+            >
+              确认移动
             </Button>
           </DialogFooter>
         </DialogContent>
