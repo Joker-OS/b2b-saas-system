@@ -8,8 +8,7 @@ const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "电商管理系统",
-  description: "专为小型电商团队设计的协作管理平台",
-    generator: 'v0.dev'
+  description: "专为小型电商团队设计的协作管理平台"
 }
 
 export default function RootLayout({
@@ -18,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className={inter.className}>
         <div className="flex h-screen bg-gray-50">
           <CustomSidebar />

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CircularProgress } from "@/components/circular-progress"
 import { storage, type Task, type Product } from "@/lib/storage"
-import { AlertTriangle, CheckCircle, Clock } from "lucide-react"
+import { AlertTriangle, CheckCircle, Clock, Package } from "lucide-react"
+import { supabase } from "@/lib/supabaseClient"
 
 export default function Dashboard() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -13,37 +14,73 @@ export default function Dashboard() {
   const [lowStockCount, setLowStockCount] = useState(0)
 
   useEffect(() => {
-    const loadedTasks = storage.getTasks()
-    const loadedProducts = storage.getProducts()
+    const fetchData = async () => {
+      try {
+        // 检查 supabase 是否正确初始化
+        if (!supabase) {
+          console.error('Supabase 客户端未初始化')
+          return
+        }
 
-    setTasks(loadedTasks)
-    setProducts(loadedProducts)
+        // 从 Supabase 获取任务
+        const { data: tasksData, error: taskError } = await supabase
+          .from('tasks')
+          .select('*')
+    
+        if (taskError) {
+          console.error('获取任务失败:', taskError)
+        } else {
+          setTasks(tasksData || [])
+        }
+    
+        // 从 Supabase 获取库存商品
+        const { data: productsData, error: productError } = await supabase
+          .from('inventory_items')
+          .select('*')
+    
+        if (productError) {
+          console.error('获取库存失败:', productError)
+        } else {
+          setProducts(productsData || [])
+        }
+      } catch (error) {
+        console.error('获取数据时发生错误:', error)
+      }
+    }
+  
+    fetchData()
+  }, [])
 
+  useEffect(() => {
+    // 只在客户端进行计算，避免hydration错误
+    if (typeof window === 'undefined') return
+    
     // 计算本周任务完成率
     const now = new Date()
     const weekStart = new Date(now.setDate(now.getDate() - now.getDay()))
     weekStart.setHours(0, 0, 0, 0)
 
-    const weeklyTasks = loadedTasks.filter((task) => {
+    const weeklyTasks = tasks.filter((task: Task) => {
       const taskDate = new Date(task.createdAt)
       return taskDate >= weekStart
     })
 
-    const completedWeeklyTasks = weeklyTasks.filter((task) => task.status === "completed")
+    const completedWeeklyTasks = weeklyTasks.filter((task: Task) => task.status === "completed")
     const completionRate =
       weeklyTasks.length > 0 ? Math.round((completedWeeklyTasks.length / weeklyTasks.length) * 100) : 0
 
     setWeeklyCompletionRate(completionRate)
 
     // 计算库存过低商品数量
-    const lowStock = loadedProducts.filter((product) => product.stock < product.threshold)
+    const lowStock = products.filter((product: Product) => product.stock < product.threshold)
     setLowStockCount(lowStock.length)
-  }, [])
+  }, [tasks, products])
 
   const totalTasks = tasks.length
-  const completedTasks = tasks.filter((task) => task.status === "completed").length
-  const overdueTasks = tasks.filter((task) => task.status === "overdue").length
-  const pendingTasks = tasks.filter((task) => task.status === "pending").length
+  const completedTasks = tasks.filter((task: Task) => task.status === "completed").length
+  const overdueTasks = tasks.filter((task: Task) => task.status === "overdue").length
+  const pendingTasks = tasks.filter((task: Task) => task.status === "pending").length
+  const totalProducts = products.length
 
   return (
     <div className="space-y-8">
@@ -54,7 +91,7 @@ export default function Dashboard() {
       </div>
 
       {/* 数据卡片网格 */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="bg-white shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">总任务数</CardTitle>
@@ -85,6 +122,17 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{overdueTasks}</div>
             <p className="text-xs text-gray-500 mt-1">需要紧急处理</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">商品总数</CardTitle>
+            <Package className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-gray-900">{totalProducts}</div>
+            <p className="text-xs text-gray-500 mt-1">库存中的商品</p>
           </CardContent>
         </Card>
 

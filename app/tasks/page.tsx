@@ -17,7 +17,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { storage, type Task, type Member } from "@/lib/storage"
+import { type Task, type Member } from "@/lib/storage"
+import { supabase } from "@/lib/supabaseClient"
 import { Plus, Calendar, User, CheckCircle, Clock, AlertTriangle, Trash2 } from "lucide-react"
 
 export default function TasksPage() {
@@ -34,46 +35,127 @@ export default function TasksPage() {
     loadData()
   }, [])
 
-  const loadData = () => {
-    const loadedTasks = storage.getTasks()
-    const loadedMembers = storage.getMembers()
+  const loadData = async () => {
+    try {
+      // 从 Supabase 获取任务
+      const { data: tasksData, error: taskError } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    // 更新任务状态
-    const updatedTasks = loadedTasks.map((task) => {
-      if (task.status === "pending" && new Date(task.dueDate) < new Date()) {
-        const updatedTask = { ...task, status: "overdue" as const }
-        storage.updateTask(task.id, { status: "overdue" })
-        return updatedTask
+      if (taskError) {
+        console.error('获取任务失败:', taskError)
+      } else {
+        // 转换数据格式以匹配本地类型
+        const formattedTasks = tasksData?.map(task => ({
+          id: task.id.toString(),
+          title: task.title,
+          assignee: task.assignee,
+          dueDate: task.due_date,
+          status: task.status as "pending" | "completed" | "overdue",
+          createdAt: task.created_at
+        })) || []
+
+        // 更新逾期任务状态
+        const updatedTasks = formattedTasks.map((task) => {
+          if (task.status === "pending" && new Date(task.dueDate) < new Date()) {
+            handleUpdateTaskStatus(task.id, "overdue")
+            return { ...task, status: "overdue" as const }
+          }
+          return task
+        })
+
+        setTasks(updatedTasks)
       }
-      return task
-    })
 
-    setTasks(updatedTasks)
-    setMembers(loadedMembers)
-  }
+      // 从 Supabase 获取成员
+      const { data: membersData, error: memberError } = await supabase
+        .from('members')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-  const handleCreateTask = () => {
-    if (newTask.title && newTask.assignee && newTask.dueDate) {
-      storage.addTask({
-        title: newTask.title,
-        assignee: newTask.assignee,
-        dueDate: newTask.dueDate,
-        status: "pending",
-      })
-      setNewTask({ title: "", assignee: "", dueDate: "" })
-      setIsDialogOpen(false)
-      loadData()
+      if (memberError) {
+        console.error('获取成员失败:', memberError)
+        // 如果成员表不存在，使用默认成员
+        setMembers([
+          { id: "1", name: "张三", createdAt: new Date().toISOString() },
+          { id: "2", name: "李四", createdAt: new Date().toISOString() },
+          { id: "3", name: "王五", createdAt: new Date().toISOString() }
+        ])
+      } else {
+        const formattedMembers = membersData?.map(member => ({
+          id: member.id.toString(),
+          name: member.name,
+          createdAt: member.created_at
+        })) || []
+        setMembers(formattedMembers)
+      }
+    } catch (error) {
+      console.error('加载数据时发生错误:', error)
     }
   }
 
-  const handleCompleteTask = (taskId: string) => {
-    storage.updateTask(taskId, { status: "completed" })
+  const handleCreateTask = async () => {
+    if (newTask.title && newTask.assignee && newTask.dueDate) {
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert([{
+            title: newTask.title,
+            assignee: newTask.assignee,
+            due_date: newTask.dueDate,
+            status: 'pending'
+          }])
+          .select()
+
+        if (error) {
+          console.error('创建任务失败:', error)
+        } else {
+          setNewTask({ title: "", assignee: "", dueDate: "" })
+          setIsDialogOpen(false)
+          loadData()
+        }
+      } catch (error) {
+        console.error('创建任务时发生错误:', error)
+      }
+    }
+  }
+
+  const handleUpdateTaskStatus = async (taskId: string, status: string) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ status })
+        .eq('id', taskId)
+
+      if (error) {
+        console.error('更新任务状态失败:', error)
+      }
+    } catch (error) {
+      console.error('更新任务状态时发生错误:', error)
+    }
+  }
+
+  const handleCompleteTask = async (taskId: string) => {
+    await handleUpdateTaskStatus(taskId, 'completed')
     loadData()
   }
 
-  const handleDeleteTask = (taskId: string) => {
-    storage.deleteTask(taskId)
-    loadData()
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId)
+
+      if (error) {
+        console.error('删除任务失败:', error)
+      } else {
+        loadData()
+      }
+    } catch (error) {
+      console.error('删除任务时发生错误:', error)
+    }
   }
 
   const getStatusBadge = (status: Task["status"]) => {
