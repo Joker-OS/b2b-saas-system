@@ -17,16 +17,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { type Task, type Member } from "@/lib/storage"
-import { supabase } from "@/lib/supabaseClient"
+import { type Task, type Member, storage } from "@/lib/storage"
+import { supabase, isSupabaseAvailable } from "@/lib/supabaseClient"
 import { Plus, Calendar, User, CheckCircle, Clock, AlertTriangle, Trash2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export default function TasksPage() {
+  const { toast } = useToast()
   const [tasks, setTasks] = useState<Task[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newTask, setNewTask] = useState({
     title: "",
+    description: "",
     assignee: "",
     dueDate: "",
   })
@@ -37,6 +40,20 @@ export default function TasksPage() {
 
   const loadData = async () => {
     try {
+      // 检查 Supabase 是否可用
+      if (!isSupabaseAvailable() || !supabase) {
+        // 使用本地存储数据
+        const localTasks = storage.getTasks()
+        const localMembers = storage.getMembers()
+        setTasks(localTasks)
+        setMembers(localMembers.length > 0 ? localMembers : [
+          { id: "1", name: "张三", createdAt: new Date().toISOString() },
+          { id: "2", name: "李四", createdAt: new Date().toISOString() },
+          { id: "3", name: "王五", createdAt: new Date().toISOString() }
+        ])
+        return
+      }
+
       // 从 Supabase 获取任务
       const { data: tasksData, error: taskError } = await supabase
         .from('tasks')
@@ -45,11 +62,37 @@ export default function TasksPage() {
 
       if (taskError) {
         console.error('获取任务失败:', taskError)
+        console.log('错误详情:', {
+          code: taskError.code,
+          message: taskError.message,
+          details: taskError.details,
+          hint: taskError.hint
+        })
+        
+        // 根据错误类型提供不同的提示
+        let errorMessage = "无法从数据库获取任务数据，使用本地数据。"
+        if (taskError.code === 'PGRST116') {
+          errorMessage = "数据库表不存在，请先创建表结构。"
+        } else if (taskError.code === '42501') {
+          errorMessage = "权限不足，请检查 RLS 策略设置。"
+        } else if (taskError.code === '42P01') {
+          errorMessage = "表 'tasks' 不存在，请运行数据库初始化脚本。"
+        }
+        
+        toast({
+          title: "获取任务失败",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        // 使用本地存储的任务数据作为备用
+        const localTasks = storage.getTasks()
+        setTasks(localTasks)
       } else {
         // 转换数据格式以匹配本地类型
         const formattedTasks = tasksData?.map(task => ({
           id: task.id.toString(),
           title: task.title,
+          description: task.description || "",
           assignee: task.assignee,
           dueDate: task.due_date,
           status: task.status as "pending" | "completed" | "overdue",
@@ -76,12 +119,41 @@ export default function TasksPage() {
 
       if (memberError) {
         console.error('获取成员失败:', memberError)
-        // 如果成员表不存在，使用默认成员
-        setMembers([
-          { id: "1", name: "张三", createdAt: new Date().toISOString() },
-          { id: "2", name: "李四", createdAt: new Date().toISOString() },
-          { id: "3", name: "王五", createdAt: new Date().toISOString() }
-        ])
+        console.log('错误详情:', {
+          code: memberError.code,
+          message: memberError.message,
+          details: memberError.details,
+          hint: memberError.hint
+        })
+        
+        // 根据错误类型提供不同的提示
+        let errorMessage = "无法从数据库获取成员数据，使用本地数据。"
+        if (memberError.code === 'PGRST116') {
+          errorMessage = "数据库表不存在，请先创建表结构。"
+        } else if (memberError.code === '42501') {
+          errorMessage = "权限不足，请检查 RLS 策略设置。"
+        } else if (memberError.code === '42P01') {
+          errorMessage = "表 'members' 不存在，请运行数据库初始化脚本。"
+        }
+        
+        toast({
+          title: "获取成员失败",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        
+        // 使用本地存储的成员数据作为备用
+        const localMembers = storage.getMembers()
+        if (localMembers.length === 0) {
+          // 如果本地也没有数据，使用默认成员
+          setMembers([
+            { id: "1", name: "张三", createdAt: new Date().toISOString() },
+            { id: "2", name: "李四", createdAt: new Date().toISOString() },
+            { id: "3", name: "王五", createdAt: new Date().toISOString() }
+          ])
+        } else {
+          setMembers(localMembers)
+        }
       } else {
         const formattedMembers = membersData?.map(member => ({
           id: member.id.toString(),
@@ -98,10 +170,31 @@ export default function TasksPage() {
   const handleCreateTask = async () => {
     if (newTask.title && newTask.assignee && newTask.dueDate) {
       try {
+        // 检查 Supabase 是否可用
+        if (!isSupabaseAvailable() || !supabase) {
+          // 保存到本地存储
+          storage.addTask({
+            title: newTask.title,
+            description: newTask.description,
+            assignee: newTask.assignee,
+            dueDate: newTask.dueDate,
+            status: 'pending'
+          })
+          toast({
+            title: "任务创建成功",
+            description: "新任务已保存到本地存储。",
+          })
+          setNewTask({ title: "", description: "", assignee: "", dueDate: "" })
+          setIsDialogOpen(false)
+          loadData()
+          return
+        }
+
         const { data, error } = await supabase
           .from('tasks')
           .insert([{
             title: newTask.title,
+            description: newTask.description,
             assignee: newTask.assignee,
             due_date: newTask.dueDate,
             status: 'pending'
@@ -110,19 +203,96 @@ export default function TasksPage() {
 
         if (error) {
           console.error('创建任务失败:', error)
+          console.log('错误详情:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          })
+          
+          // 根据错误类型提供不同的提示
+          let errorMessage = "无法创建任务到数据库，保存到本地存储。"
+          if (error.code === 'PGRST116') {
+            errorMessage = "数据库表不存在，请先创建表结构。"
+          } else if (error.code === '42501') {
+            errorMessage = "权限不足，请检查 RLS 策略设置。"
+          } else if (error.code === '42P01') {
+            errorMessage = "表 'tasks' 不存在，请运行数据库初始化脚本。"
+          } else if (error.code === '23505') {
+            errorMessage = "任务已存在，请检查重复数据。"
+          }
+          
+          toast({
+            title: "创建任务失败",
+            description: errorMessage,
+            variant: "destructive",
+          })
+          // 保存到本地存储作为备用
+          storage.addTask({
+            title: newTask.title,
+            description: newTask.description,
+            assignee: newTask.assignee,
+            dueDate: newTask.dueDate,
+            status: 'pending'
+          })
+          setNewTask({ title: "", description: "", assignee: "", dueDate: "" })
+          setIsDialogOpen(false)
+          loadData()
         } else {
-          setNewTask({ title: "", assignee: "", dueDate: "" })
+          toast({
+            title: "任务创建成功",
+            description: "新任务已成功创建。",
+          })
+          setNewTask({ title: "", description: "", assignee: "", dueDate: "" })
           setIsDialogOpen(false)
           loadData()
         }
       } catch (error) {
         console.error('创建任务时发生错误:', error)
+        console.log('错误详情:', {
+          name: (error as any)?.name,
+          message: (error as any)?.message,
+          stack: (error as any)?.stack,
+          cause: (error as any)?.cause
+        })
+        
+        // 处理网络错误或其他异常
+        let errorMessage = "创建任务时发生未知错误，保存到本地存储。"
+        if ((error as any)?.message?.includes('fetch')) {
+          errorMessage = "网络连接失败，保存到本地存储。"
+        } else if ((error as any)?.message?.includes('timeout')) {
+          errorMessage = "请求超时，保存到本地存储。"
+        }
+        
+        toast({
+          title: "创建任务失败",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        
+        // 保存到本地存储作为备用
+        storage.addTask({
+          title: newTask.title,
+          description: newTask.description,
+          assignee: newTask.assignee,
+          dueDate: newTask.dueDate,
+          status: 'pending'
+        })
+        setNewTask({ title: "", description: "", assignee: "", dueDate: "" })
+        setIsDialogOpen(false)
+        loadData()
       }
     }
   }
 
   const handleUpdateTaskStatus = async (taskId: string, status: string) => {
     try {
+      if (!isSupabaseAvailable() || !supabase) {
+        // 更新本地存储
+        storage.updateTask(taskId, { status: status as "pending" | "completed" | "overdue" })
+        return
+      }
+
       const { error } = await supabase
         .from('tasks')
         .update({ status })
@@ -143,6 +313,13 @@ export default function TasksPage() {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
+      if (!isSupabaseAvailable() || !supabase) {
+        // 从本地存储删除
+        storage.deleteTask(taskId)
+        loadData()
+        return
+      }
+
       const { error } = await supabase
         .from('tasks')
         .delete()
@@ -206,12 +383,23 @@ export default function TasksPage() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="title">任务内容</Label>
+                <Label htmlFor="title">任务名称</Label>
                 <Input
                   id="title"
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  placeholder="请输入任务内容"
+                  placeholder="请输入任务名称"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="description">任务描述</Label>
+                <textarea
+                  id="description"
+                  value={newTask.description}
+                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                  placeholder="请输入任务描述"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  rows={3}
                 />
               </div>
               <div className="grid gap-2">
@@ -277,15 +465,20 @@ export default function TasksPage() {
                     </Button>
                   </ConfirmDialog>
                 </div>
-                <CardDescription className="flex items-center gap-4">
-                  <span className="flex items-center gap-1">
-                    <User className="h-4 w-4" />
-                    {task.assignee}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />
-                    截止：{formatDate(task.dueDate)}
-                  </span>
+                <CardDescription className="flex flex-col gap-2">
+                  {task.description && (
+                    <p className="text-sm text-muted-foreground">{task.description}</p>
+                  )}
+                  <div className="flex items-center gap-4">
+                    <span className="flex items-center gap-1">
+                      <User className="h-4 w-4" />
+                      {task.assignee}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      截止：{formatDate(task.dueDate)}
+                    </span>
+                  </div>
                 </CardDescription>
               </CardHeader>
               {task.status === "pending" && (

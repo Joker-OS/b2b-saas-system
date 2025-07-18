@@ -2,6 +2,7 @@
 export interface Task {
   id: string
   title: string
+  description: string
   assignee: string
   dueDate: string
   status: "pending" | "completed" | "overdue"

@@ -33,7 +33,7 @@ const navigationItems = [
 ]
 
 export function CustomSidebar() {
-  const pathname = usePathname()
+  const pathname = usePathname() || "/"
 
   return (
     <div className="fixed left-0 top-0 z-40 h-screen w-64 bg-white border-r border-gray-200">

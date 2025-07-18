@@ -5,9 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { CircularProgress } from "@/components/circular-progress"
 import { storage, type Task, type Product } from "@/lib/storage"
 import { AlertTriangle, CheckCircle, Clock, Package } from "lucide-react"
-import { supabase } from "@/lib/supabaseClient"
+import { supabase, isSupabaseAvailable } from "@/lib/supabaseClient"
+import { useToast } from "@/hooks/use-toast"
 
 export default function Dashboard() {
+  const { toast } = useToast()
   const [tasks, setTasks] = useState<Task[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [weeklyCompletionRate, setWeeklyCompletionRate] = useState(0)
@@ -16,9 +18,13 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 检查 supabase 是否正确初始化
-        if (!supabase) {
-          console.error('Supabase 客户端未初始化')
+        // 检查 Supabase 是否可用
+        if (!isSupabaseAvailable() || !supabase) {
+          // 使用本地存储数据
+          const localTasks = storage.getTasks()
+          const localProducts = storage.getProducts()
+          setTasks(localTasks)
+          setProducts(localProducts)
           return
         }
 
@@ -29,6 +35,31 @@ export default function Dashboard() {
     
         if (taskError) {
           console.error('获取任务失败:', taskError)
+          console.log('错误详情:', {
+            code: taskError.code,
+            message: taskError.message,
+            details: taskError.details,
+            hint: taskError.hint
+          })
+          
+          // 根据错误类型提供不同的提示
+          let errorMessage = "无法从数据库获取任务数据，使用本地数据。"
+          if (taskError.code === 'PGRST116') {
+            errorMessage = "数据库表不存在，请先创建表结构。"
+          } else if (taskError.code === '42501') {
+            errorMessage = "权限不足，请检查 RLS 策略设置。"
+          } else if (taskError.code === '42P01') {
+            errorMessage = "表 'tasks' 不存在，请运行数据库初始化脚本。"
+          }
+          
+          toast({
+            title: "获取任务失败",
+            description: errorMessage,
+            variant: "destructive",
+          })
+          // 使用本地存储的任务数据作为备用
+          const localTasks = storage.getTasks()
+          setTasks(localTasks)
         } else {
           setTasks(tasksData || [])
         }
@@ -40,6 +71,31 @@ export default function Dashboard() {
     
         if (productError) {
           console.error('获取库存失败:', productError)
+          console.log('错误详情:', {
+            code: productError.code,
+            message: productError.message,
+            details: productError.details,
+            hint: productError.hint
+          })
+          
+          // 根据错误类型提供不同的提示
+          let errorMessage = "无法从数据库获取库存数据，使用本地数据。"
+          if (productError.code === 'PGRST116') {
+            errorMessage = "数据库表不存在，请先创建表结构。"
+          } else if (productError.code === '42501') {
+            errorMessage = "权限不足，请检查 RLS 策略设置。"
+          } else if (productError.code === '42P01') {
+            errorMessage = "表 'inventory_items' 不存在，请运行数据库初始化脚本。"
+          }
+          
+          toast({
+            title: "获取库存失败",
+            description: errorMessage,
+            variant: "destructive",
+          })
+          // 使用本地存储的商品数据作为备用
+          const localProducts = storage.getProducts()
+          setProducts(localProducts)
         } else {
           setProducts(productsData || [])
         }

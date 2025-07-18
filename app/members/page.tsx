@@ -15,10 +15,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { storage, type Member } from "@/lib/storage"
+import { type Member, storage } from "@/lib/storage"
+import { supabase, isSupabaseAvailable } from "@/lib/supabaseClient"
 import { Plus, Users, Trash2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export default function MembersPage() {
+  const { toast } = useToast()
   const [members, setMembers] = useState<Member[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newMember, setNewMember] = useState({
@@ -29,25 +32,147 @@ export default function MembersPage() {
     loadMembers()
   }, [])
 
-  const loadMembers = () => {
-    const loadedMembers = storage.getMembers()
-    setMembers(loadedMembers)
-  }
+  const loadMembers = async () => {
+    try {
+      // 检查 Supabase 是否可用
+      if (!isSupabaseAvailable() || !supabase) {
+        // 使用本地存储数据
+        const localMembers = storage.getMembers()
+        setMembers(localMembers.length > 0 ? localMembers : [
+          { id: "1", name: "张三", createdAt: new Date().toISOString() },
+          { id: "2", name: "李四", createdAt: new Date().toISOString() },
+          { id: "3", name: "王五", createdAt: new Date().toISOString() }
+        ])
+        return
+      }
 
-  const handleAddMember = () => {
-    if (newMember.name) {
-      storage.addMember({
-        name: newMember.name,
-      })
-      setNewMember({ name: "" })
-      setIsDialogOpen(false)
-      loadMembers()
+      const { data: membersData, error: memberError } = await supabase
+        .from('members')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (memberError) {
+        console.error('获取成员失败:', memberError)
+        toast({
+          title: "获取成员失败",
+          description: "无法从数据库获取成员数据，使用本地数据。",
+          variant: "destructive",
+        })
+        // 使用本地存储的成员数据作为备用
+        const localMembers = storage.getMembers()
+        if (localMembers.length === 0) {
+          // 如果本地也没有数据，使用默认成员
+          setMembers([
+            { id: "1", name: "张三", createdAt: new Date().toISOString() },
+            { id: "2", name: "李四", createdAt: new Date().toISOString() },
+            { id: "3", name: "王五", createdAt: new Date().toISOString() }
+          ])
+        } else {
+          setMembers(localMembers)
+        }
+      } else {
+        const formattedMembers = membersData?.map(member => ({
+          id: member.id.toString(),
+          name: member.name,
+          createdAt: member.created_at
+        })) || []
+        setMembers(formattedMembers)
+      }
+    } catch (error) {
+      console.error('加载成员时发生错误:', error)
     }
   }
 
-  const handleDeleteMember = (memberId: string) => {
-    storage.deleteMember(memberId)
-    loadMembers()
+  const handleAddMember = async () => {
+    if (newMember.name) {
+      try {
+        // 检查 Supabase 是否可用
+        if (!isSupabaseAvailable() || !supabase) {
+          // 保存到本地存储
+          storage.addMember({
+            name: newMember.name
+          })
+          toast({
+            title: "成员添加成功",
+            description: "新成员已保存到本地存储。",
+          })
+          setNewMember({ name: "" })
+          setIsDialogOpen(false)
+          loadMembers()
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('members')
+          .insert([{
+            name: newMember.name
+          }])
+          .select()
+
+        if (error) {
+          console.error('添加成员失败:', error)
+          toast({
+            title: "添加成员失败",
+            description: "无法添加成员到数据库，保存到本地存储。",
+            variant: "destructive",
+          })
+          // 保存到本地存储作为备用
+          storage.addMember({
+            name: newMember.name
+          })
+          setNewMember({ name: "" })
+          setIsDialogOpen(false)
+          loadMembers()
+        } else {
+          toast({
+            title: "成员添加成功",
+            description: "新成员已成功添加。",
+          })
+          setNewMember({ name: "" })
+          setIsDialogOpen(false)
+          loadMembers()
+        }
+      } catch (error) {
+        console.error('添加成员时发生错误:', error)
+      }
+    }
+  }
+
+  const handleDeleteMember = async (memberId: string) => {
+    try {
+      if (!isSupabaseAvailable() || !supabase) {
+        // 从本地存储删除
+        storage.deleteMember(memberId)
+        toast({
+          title: "成员删除成功",
+          description: "成员已从本地存储删除。",
+        })
+        loadMembers()
+        return
+      }
+
+      const { error } = await supabase
+        .from('members')
+        .delete()
+        .eq('id', memberId)
+
+      if (error) {
+        console.error('删除成员失败:', error)
+        toast({
+          title: "删除成员失败",
+          description: "无法删除成员，请检查网络连接或联系管理员。",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "成员删除成功",
+          description: "成员已成功删除。",
+        })
+        loadMembers()
+      }
+    } catch (error) {
+      console.error('删除成员时发生错误:', error)
+    }
   }
 
   return (

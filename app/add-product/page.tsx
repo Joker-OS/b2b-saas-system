@@ -23,31 +23,65 @@ export default function AddProductPage() {
   })
 
   useEffect(() => {
+    console.log('组件加载，初始化数据...')
     // 初始化默认分组
     storage.initializeDefaultCategory()
     loadCategories()
   }, [])
 
   const loadCategories = () => {
+    console.log('加载商品分组...')
     const loadedCategories = storage.getCategories()
+    console.log('加载到的分组:', loadedCategories)
     setCategories(loadedCategories)
     
     // 如果有分组且产品分组还未设置，设置为第一个分组
     if (loadedCategories.length > 0 && !product.categoryId) {
+      console.log('设置默认分组:', loadedCategories[0])
       setProduct(prev => ({ ...prev, categoryId: loadedCategories[0].id }))
+    } else if (loadedCategories.length === 0) {
+      console.log('没有找到分组，创建默认分组')
+      const defaultCategory = storage.addCategory({ name: "默认分组" })
+      setCategories([defaultCategory])
+      setProduct(prev => ({ ...prev, categoryId: defaultCategory.id }))
     }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (product.name && product.stock >= 0 && product.threshold >= 0 && product.categoryId) {
-      storage.addProduct({
+    console.log('提交表单:', product)
+    
+    // 确保有默认分组
+    let finalCategoryId = product.categoryId
+    if (!finalCategoryId && categories.length > 0) {
+      finalCategoryId = categories[0].id
+      console.log('使用默认分组:', finalCategoryId)
+    }
+    
+    if (product.name && product.stock >= 0 && product.threshold >= 0 && finalCategoryId) {
+      console.log('验证通过，开始添加商品...')
+      try {
+        const newProduct = storage.addProduct({
+          name: product.name,
+          stock: product.stock,
+          threshold: product.threshold,
+          categoryId: finalCategoryId,
+        })
+        console.log('商品添加成功:', newProduct)
+        alert('商品添加成功！')
+        router.push("/inventory")
+      } catch (error) {
+        console.error('添加商品失败:', error)
+        alert('添加商品失败: ' + error)
+      }
+    } else {
+      console.log('表单验证失败:', {
         name: product.name,
         stock: product.stock,
         threshold: product.threshold,
-        categoryId: product.categoryId,
+        categoryId: finalCategoryId
       })
-      router.push("/inventory")
+      alert('请填写完整的商品信息（商品名称、库存数量、库存阈值）')
     }
   }
 
@@ -124,7 +158,10 @@ export default function AddProductPage() {
               />
               <p className="text-sm text-muted-foreground">当库存数量低于此阈值时，系统将显示库存过低预警</p>
             </div>
-            <Button type="submit" className="w-full">
+            <Button 
+              type="submit" 
+              className="w-full"
+            >
               <Package className="mr-2 h-4 w-4" />
               添加商品
             </Button>
