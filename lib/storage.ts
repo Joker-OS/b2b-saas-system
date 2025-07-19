@@ -30,7 +30,39 @@ export interface Member {
   createdAt: string
 }
 
-class StorageManager {
+// 定义存储接口，供本地存储和 Supabase 存储实现
+export interface StorageInterface {
+  // 任务管理
+  getTasks(): Task[] | Promise<Task[]>;
+  addTask(task: Omit<Task, "id" | "createdAt">): Task | Promise<Task>;
+  updateTask(id: string, updates: Partial<Task>): void | Promise<void>;
+  deleteTask(id: string): void | Promise<void>;
+
+  // 商品管理
+  getProducts(): Product[] | Promise<Product[]>;
+  saveProducts?(products: Product[]): void | Promise<void>;
+  addProduct(product: Omit<Product, "id" | "createdAt">): Product | Promise<Product>;
+  updateProduct(id: string, updates: Partial<Product>): void | Promise<void>;
+  deleteProduct(id: string): void | Promise<void>;
+
+  // 分组管理
+  getCategories(): Category[] | Promise<Category[]>;
+  saveCategories?(categories: Category[]): void | Promise<void>;
+  addCategory(category: Omit<Category, "id" | "createdAt">): Category | Promise<Category>;
+  updateCategory?(id: string, updates: Partial<Category>): void | Promise<void>;
+  deleteCategory(id: string): void | Promise<void>;
+
+  // 成员管理
+  getMembers(): Member[] | Promise<Member[]>;
+  saveMembers?(members: Member[]): void | Promise<void>;
+  addMember(member: Omit<Member, "id" | "createdAt">): Member | Promise<Member>;
+  deleteMember(id: string): void | Promise<void>;
+
+  // 初始化默认分组
+  initializeDefaultCategory(): void | Promise<void>;
+}
+
+class StorageManager implements StorageInterface {
   private getItem<T>(key: string): T[] {
     if (typeof window === "undefined") return []
     const item = localStorage.getItem(key)

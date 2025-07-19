@@ -11,9 +11,12 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { storage, type Category } from "@/lib/storage"
 import { Package, ArrowLeft } from "lucide-react"
+import { db } from "@/lib/storageProvider"
+import { useToast } from "@/hooks/use-toast"
 
 export default function AddProductPage() {
   const router = useRouter()
+  const { toast } = useToast()
   const [categories, setCategories] = useState<Category[]>([])
   const [product, setProduct] = useState({
     name: "",
@@ -21,33 +24,61 @@ export default function AddProductPage() {
     threshold: 0,
     categoryId: "",
   })
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     console.log('组件加载，初始化数据...')
     // 初始化默认分组
-    storage.initializeDefaultCategory()
-    loadCategories()
+    async function init() {
+      setIsLoading(true)
+      try {
+        await db.initializeDefaultCategory()
+        await loadCategories()
+      } catch (error) {
+        console.error('初始化失败:', error)
+        toast({
+          title: "初始化失败",
+          description: "加载数据时出现错误，请刷新页面重试。",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    init()
   }, [])
 
-  const loadCategories = () => {
+  const loadCategories = async () => {
     console.log('加载商品分组...')
-    const loadedCategories = storage.getCategories()
-    console.log('加载到的分组:', loadedCategories)
-    setCategories(loadedCategories)
-    
-    // 如果有分组且产品分组还未设置，设置为第一个分组
-    if (loadedCategories.length > 0 && !product.categoryId) {
-      console.log('设置默认分组:', loadedCategories[0])
-      setProduct(prev => ({ ...prev, categoryId: loadedCategories[0].id }))
-    } else if (loadedCategories.length === 0) {
-      console.log('没有找到分组，创建默认分组')
-      const defaultCategory = storage.addCategory({ name: "默认分组" })
-      setCategories([defaultCategory])
-      setProduct(prev => ({ ...prev, categoryId: defaultCategory.id }))
+    setIsLoading(true)
+    try {
+      const loadedCategories = await db.getCategories()
+      console.log('加载到的分组:', loadedCategories)
+      setCategories(loadedCategories)
+      
+      // 如果有分组且产品分组还未设置，设置为第一个分组
+      if (loadedCategories.length > 0 && !product.categoryId) {
+        console.log('设置默认分组:', loadedCategories[0])
+        setProduct(prev => ({ ...prev, categoryId: loadedCategories[0].id }))
+      } else if (loadedCategories.length === 0) {
+        console.log('没有找到分组，创建默认分组')
+        const defaultCategory = await db.addCategory({ name: "默认分组" })
+        setCategories([defaultCategory])
+        setProduct(prev => ({ ...prev, categoryId: defaultCategory.id }))
+      }
+    } catch (error) {
+      console.error('加载分组失败:', error)
+      toast({
+        title: "加载分组失败",
+        description: "获取商品分组时出现错误，请刷新页面重试。",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     console.log('提交表单:', product)
     
@@ -61,18 +92,27 @@ export default function AddProductPage() {
     if (product.name && product.stock >= 0 && product.threshold >= 0 && finalCategoryId) {
       console.log('验证通过，开始添加商品...')
       try {
-        const newProduct = storage.addProduct({
+        setIsLoading(true)
+        const newProduct = await db.addProduct({
           name: product.name,
           stock: product.stock,
           threshold: product.threshold,
           categoryId: finalCategoryId,
         })
         console.log('商品添加成功:', newProduct)
-        alert('商品添加成功！')
+        toast({
+          title: "添加成功",
+          description: "商品已成功添加到库存中。",
+        })
         router.push("/inventory")
       } catch (error) {
         console.error('添加商品失败:', error)
-        alert('添加商品失败: ' + error)
+        toast({
+          title: "添加失败",
+          description: "添加商品时出现错误，请重试。",
+          variant: "destructive",
+        })
+        setIsLoading(false)
       }
     } else {
       console.log('表单验证失败:', {
@@ -81,7 +121,11 @@ export default function AddProductPage() {
         threshold: product.threshold,
         categoryId: finalCategoryId
       })
-      alert('请填写完整的商品信息（商品名称、库存数量、库存阈值）')
+      toast({
+        title: "验证失败",
+        description: "请填写完整的商品信息（商品名称、库存数量、库存阈值）。",
+        variant: "destructive",
+      })
     }
   }
 

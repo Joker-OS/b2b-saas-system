@@ -296,7 +296,7 @@ export default function TasksPage() {
       const { error } = await supabase
         .from('tasks')
         .update({ status })
-        .eq('id', taskId)
+        .eq('id', parseInt(taskId, 10))  // 将字符串 ID 转换为数字
 
       if (error) {
         console.error('更新任务状态失败:', error)
@@ -323,7 +323,7 @@ export default function TasksPage() {
       const { error } = await supabase
         .from('tasks')
         .delete()
-        .eq('id', taskId)
+        .eq('id', parseInt(taskId, 10))  // 将字符串 ID 转换为数字
 
       if (error) {
         console.error('删除任务失败:', error)

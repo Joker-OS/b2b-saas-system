@@ -19,8 +19,11 @@ import {
 } from "@/components/ui/dialog"
 import { storage, type Product, type Category } from "@/lib/storage"
 import { Package, AlertTriangle, Edit, Trash2, ArrowDown, ArrowUp, Plus, FolderPlus, Move } from "lucide-react"
+import { db } from "@/lib/storageProvider"
+import { useToast } from "@/hooks/use-toast"
 
 export default function InventoryPage() {
+  const { toast } = useToast()
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -36,18 +39,46 @@ export default function InventoryPage() {
   const [inboundQuantity, setInboundQuantity] = useState(0)
   const [newCategoryName, setNewCategoryName] = useState("")
   const [targetCategoryId, setTargetCategoryId] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     // 初始化默认分组
-    storage.initializeDefaultCategory()
-    loadData()
+    async function init() {
+      setIsLoading(true)
+      try {
+        await db.initializeDefaultCategory()
+        await loadData()
+      } catch (error) {
+        console.error('初始化失败:', error)
+        toast({
+          title: "初始化失败",
+          description: "加载数据时出现错误，请刷新页面重试。",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    init()
   }, [])
 
-  const loadData = () => {
-    const loadedProducts = storage.getProducts()
-    const loadedCategories = storage.getCategories()
-    setProducts(loadedProducts)
-    setCategories(loadedCategories)
+  const loadData = async () => {
+    try {
+      setIsLoading(true)
+      const loadedProducts = await db.getProducts()
+      const loadedCategories = await db.getCategories()
+      setProducts(loadedProducts)
+      setCategories(loadedCategories)
+    } catch (error) {
+      console.error('加载数据失败:', error)
+      toast({
+        title: "加载数据失败",
+        description: "获取数据时出现错误，请刷新页面重试。",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleEditProduct = (product: Product) => {
@@ -55,22 +86,54 @@ export default function InventoryPage() {
     setIsEditDialogOpen(true)
   }
 
-  const handleUpdateProduct = () => {
+  const handleUpdateProduct = async () => {
     if (editingProduct) {
-      storage.updateProduct(editingProduct.id, {
-        name: editingProduct.name,
-        stock: editingProduct.stock,
-        threshold: editingProduct.threshold,
-      })
-      setEditingProduct(null)
-      setIsEditDialogOpen(false)
-      loadData()
+      try {
+        setIsLoading(true)
+        await db.updateProduct(editingProduct.id, {
+          name: editingProduct.name,
+          stock: editingProduct.stock,
+          threshold: editingProduct.threshold,
+        })
+        setEditingProduct(null)
+        setIsEditDialogOpen(false)
+        await loadData()
+        toast({
+          title: "更新成功",
+          description: "商品信息已更新。",
+        })
+      } catch (error) {
+        console.error('更新商品失败:', error)
+        toast({
+          title: "更新失败",
+          description: "更新商品信息时出现错误，请重试。",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
-  const handleDeleteProduct = (productId: string) => {
-    storage.deleteProduct(productId)
-    loadData()
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      setIsLoading(true)
+      await db.deleteProduct(productId)
+      await loadData()
+      toast({
+        title: "删除成功",
+        description: "商品已删除。",
+      })
+    } catch (error) {
+      console.error('删除商品失败:', error)
+      toast({
+        title: "删除失败",
+        description: "删除商品时出现错误，请重试。",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleOutboundProduct = (product: Product) => {
@@ -91,58 +154,144 @@ export default function InventoryPage() {
     setIsMoveDialogOpen(true)
   }
 
-  const handleOutboundSubmit = () => {
+  const handleOutboundSubmit = async () => {
     if (outboundProduct && outboundQuantity > 0) {
       const newStock = outboundProduct.stock - outboundQuantity
       if (newStock >= 0) {
-        storage.updateProduct(outboundProduct.id, {
-          stock: newStock,
+        try {
+          setIsLoading(true)
+          await db.updateProduct(outboundProduct.id, {
+            stock: newStock,
+          })
+          setOutboundProduct(null)
+          setOutboundQuantity(0)
+          setIsOutboundDialogOpen(false)
+          await loadData()
+          toast({
+            title: "出库成功",
+            description: `已出库 ${outboundQuantity} 件商品。`,
+          })
+        } catch (error) {
+          console.error('商品出库失败:', error)
+          toast({
+            title: "出库失败",
+            description: "商品出库时出现错误，请重试。",
+            variant: "destructive",
+          })
+        } finally {
+          setIsLoading(false)
+        }
+      } else {
+        toast({
+          title: "出库失败",
+          description: "出库数量不能大于库存数量。",
+          variant: "destructive",
         })
-        setOutboundProduct(null)
-        setOutboundQuantity(0)
-        setIsOutboundDialogOpen(false)
-        loadData()
       }
     }
   }
 
-  const handleInboundSubmit = () => {
+  const handleInboundSubmit = async () => {
     if (inboundProduct && inboundQuantity > 0) {
-      const newStock = inboundProduct.stock + inboundQuantity
-      storage.updateProduct(inboundProduct.id, {
-        stock: newStock,
-      })
-      setInboundProduct(null)
-      setInboundQuantity(0)
-      setIsInboundDialogOpen(false)
-      loadData()
+      try {
+        setIsLoading(true)
+        const newStock = inboundProduct.stock + inboundQuantity
+        await db.updateProduct(inboundProduct.id, {
+          stock: newStock,
+        })
+        setInboundProduct(null)
+        setInboundQuantity(0)
+        setIsInboundDialogOpen(false)
+        await loadData()
+        toast({
+          title: "入库成功",
+          description: `已入库 ${inboundQuantity} 件商品。`,
+        })
+      } catch (error) {
+        console.error('商品入库失败:', error)
+        toast({
+          title: "入库失败",
+          description: "商品入库时出现错误，请重试。",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
-  const handleMoveSubmit = () => {
+  const handleMoveSubmit = async () => {
     if (moveProduct && targetCategoryId) {
-      storage.updateProduct(moveProduct.id, {
-        categoryId: targetCategoryId,
-      })
-      setMoveProduct(null)
-      setTargetCategoryId("")
-      setIsMoveDialogOpen(false)
-      loadData()
+      try {
+        setIsLoading(true)
+        await db.updateProduct(moveProduct.id, {
+          categoryId: targetCategoryId,
+        })
+        setMoveProduct(null)
+        setTargetCategoryId("")
+        setIsMoveDialogOpen(false)
+        await loadData()
+        toast({
+          title: "移动成功",
+          description: "商品已成功移动到新分组。",
+        })
+      } catch (error) {
+        console.error('移动商品失败:', error)
+        toast({
+          title: "移动失败",
+          description: "移动商品时出现错误，请重试。",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (newCategoryName.trim()) {
-      storage.addCategory({ name: newCategoryName.trim() })
-      setNewCategoryName("")
-      setIsCategoryDialogOpen(false)
-      loadData()
+      try {
+        setIsLoading(true)
+        await db.addCategory({ name: newCategoryName.trim() })
+        setNewCategoryName("")
+        setIsCategoryDialogOpen(false)
+        await loadData()
+        toast({
+          title: "添加成功",
+          description: "商品分组已添加。",
+        })
+      } catch (error) {
+        console.error('添加分组失败:', error)
+        toast({
+          title: "添加失败",
+          description: "添加商品分组时出现错误，请重试。",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
-  const handleDeleteCategory = (categoryId: string) => {
-    storage.deleteCategory(categoryId)
-    loadData()
+  const handleDeleteCategory = async (categoryId: string) => {
+    try {
+      setIsLoading(true)
+      await db.deleteCategory(categoryId)
+      await loadData()
+      toast({
+        title: "删除成功",
+        description: "商品分组已删除，相关商品已移至默认分组。",
+      })
+    } catch (error) {
+      console.error('删除分组失败:', error)
+      toast({
+        title: "删除失败",
+        description: "删除商品分组时出现错误，请重试。",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const isLowStock = (product: Product) => {
@@ -194,7 +343,14 @@ export default function InventoryPage() {
       </div>
 
       <div className="space-y-6">
-        {categories.length === 0 ? (
+        {isLoading ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <Package className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">正在加载库存数据...</p>
+            </CardContent>
+          </Card>
+        ) : categories.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
               <Package className="h-12 w-12 text-muted-foreground mb-4" />
